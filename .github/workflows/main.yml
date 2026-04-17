@@ -1,0 +1,46 @@
+name: Build OpenStick ImmortalWrt
+
+on:
+  workflow_dispatch: # 允许你手动点击按钮开始编译
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: 准备环境
+        uses: actions/checkout@v3
+
+      - name: 安装编译依赖
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file wget
+
+      - name: 更新并安装 Feeds
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: 写入策略路由和驱动配置
+        run: |
+          # 强制开启内核策略路由
+          echo "CONFIG_IP_MULTIPLE_TABLES=y" >> .config
+          echo "CONFIG_PACKAGE_ip-full=y" >> .config
+          # 开启 4G 模组串口和驱动
+          echo "CONFIG_PACKAGE_kmod-usb-serial-option=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-usb-net-qmi-wwan=y" >> .config
+          # 开启 OpenStick 必须的硬件包
+          echo "CONFIG_PACKAGE_qcom-firmware=y" >> .config
+          # 修正内核配置以支持 VoWiFi
+          make defconfig
+
+      - name: 开始下载源码包
+        run: make download -j$(nproc)
+
+      - name: 正式编译
+        run: make -j$(nproc) || make -j1 V=s
+
+      - name: 上传编译好的固件
+        uses: actions/upload-artifact@v3
+        with:
+          name: OpenStick-Firmware
+          path: bin/targets/
